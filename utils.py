@@ -1,5 +1,15 @@
 import numpy as np
+import cv2
 
+def resize_and_crop(image, target_size=(1904, 1120), patch_size=224):
+    image = cv2.resize(image, target_size)
+    patches = []
+    for i in range(0, image.shape[0], patch_size):
+        for j in range(0, image.shape[1], patch_size):
+            patch = image[i:i + patch_size, j:j + patch_size]
+            if patch.shape[0] == patch_size and patch.shape[1] == patch_size:
+                patches.append(patch)
+    return np.array(patches)
 
 def yolo_to_patch_matrix(boxes, patch_matrix_size=(17, 10)):
     """

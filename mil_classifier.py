@@ -5,13 +5,63 @@ from torch import nn
 from torchvision.ops import nms
 import torch.nn.functional as F
 
+import timm
 
+
+class PatchFeatureExtractor(nn.Module):
+    def __init__(self, feature_dim=128, embedding_dim=512):
+        """
+        Initializes the Model class. Modifies the ResNet-18 architecture to remove the final layers
+        and add a custom projection head.
+
+        Args:
+            feature_dim (int): The size of the final feature vector output.
+            embedding_dim (int): The size of the embedding vector before the projection head.
+        """
+        super(PatchFeatureExtractor, self).__init__()
+
+        model = timm.create_model('mobilenetv4_conv_small', pretrained=True)
+        embedding_dim = model.classifier.in_features
+        model.classifier = nn.Identity()
+
+        self.f = model
+
+        # Projection head: reduces embedding to the desired feature dimension
+        self.g = nn.Sequential(
+            nn.Linear(embedding_dim, 256, bias=False),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, feature_dim, bias=True)
+        )
+
+    def forward(self, x):
+        """
+        Forward pass through the model. This computes the feature vector and the final output.
+
+        Args:
+            x (torch.Tensor): The input tensor of shape (batch_size, channels, height, width).
+
+        Returns:
+            tuple: A tuple containing:
+                - feature (torch.Tensor): The normalized feature vector (before projection head).
+                - out (torch.Tensor): The final output after applying the projection head, normalized.
+        """
+        # Pass through the ResNet backbone
+        x = self.f(x)
+
+        # Flatten the feature map (excluding the batch dimension) before passing through the projection head
+        feature = torch.flatten(x, start_dim=1)
+
+        # Apply the projection head
+        out = self.g(feature)
+
+        # Normalize both the feature vector and the final output
+        return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, patch_level_model, patch_level_model_path):
+    def __init__(self, patch_level_model):
         super(FeatureExtractor, self).__init__()
         self.patch_level_model = patch_level_model
-        self.patch_level_model.load_state_dict(torch.load(patch_level_model_path))
         self.patch_level_model.eval()
         self.patch_level_model.requires_grad_(False)
     
@@ -58,11 +108,10 @@ class AttentionClassifier(nn.Module):
         return logits_batch
     
 class MILClassifier(nn.Module):
-    def __init__(self, feature_extractor, classifier_model, patch_level_model_path):
+    def __init__(self, feature_extractor, classifier_model):
         super(MILClassifier, self).__init__()
         self.feature_extractor = feature_extractor
         self.classifier_model = classifier_model
-        self.patch_level_model_path = patch_level_model_path
 
     def forward(self, patches_batch):
         features_batch = self.feature_extractor(patches_batch)
@@ -82,4 +131,25 @@ class MILClassifier(nn.Module):
         """
         logits_batch = self(patches_batch)
         loss = F.binary_cross_entropy(logits_batch, labels)
-        return loss
+        return {"BCE": loss}
+    
+    def val_step(self, patches_batch, labels):
+        """
+        Perform a validation step.
+
+        Args:
+            patches_batch (torch.Tensor): Batch of image patches.
+            labels (torch.Tensor): Corresponding labels for the patches.
+
+        Returns:
+            torch.Tensor: Loss value.
+        """
+        with torch.no_grad():
+            logits_batch = self(patches_batch)
+            loss = F.binary_cross_entropy(logits_batch, labels)
+        return {"BCE": loss}
+    
+    def is_better(self, current_losses, best_losses):
+        if len(best_losses) == 0:
+            return True
+        return current_losses["BCE"] < best_losses["BCE"]
