@@ -13,7 +13,7 @@ from custom_dataset import CustomDataset
 from mil_classifier import PatchFeatureExtractor, FeatureExtractor, AttentionClassifier, MILClassifier
 
 
-def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=64):
+def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=256):
     """
     Prepares the dataset and dataloaders.
 
@@ -34,17 +34,20 @@ def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=64):
     return dataloader
 
 
-def train_model(model : MILClassifier, train_loader, val_loader, epochs=100, log_dir='./logs_mil', best_model_path='./best_model.pth'):
+def train_model(model : MILClassifier, train_loader, val_loader, epochs=100, device='cuda', log_dir='./logs_mil', best_model_path='./best_model.pth'):
     # initialize tensorboard writer
     writer = SummaryWriter(log_dir=log_dir)
     # initialize best losses
     best_losses = dict()
-    for epoch in tqdm(range(epochs)):
+    for epoch in (range(epochs)):
         # Training phase
         model.train()
         # initialize train losses
         train_losses = dict()
-        for X, y in train_loader:
+        print(f"Epoch {epoch+1}/{epochs}. Training step.")
+        for X, y in tqdm(train_loader):
+            X = X.to(device)
+            y = y.to(device)
             # perform training step
             losses = model.train_step(X, y)
             # accumulate losses
@@ -59,7 +62,10 @@ def train_model(model : MILClassifier, train_loader, val_loader, epochs=100, log
         model.eval()
         # initialize validation losses
         val_losses = dict()
-        for X, y in val_loader:
+        print(f"Validation step.")
+        for X, y in tqdm(val_loader):
+            X = X.to(device)
+            y = y.to(device)
             # perform validation step
             losses = model.val_step(X, y)
             for loss_name, loss in losses.items():
@@ -83,16 +89,16 @@ def train_model(model : MILClassifier, train_loader, val_loader, epochs=100, log
 
 
 
-def train_autoencoder(device="cuda", epochs=70):
+def train_autoencoder(device="cuda", epochs=10):
     # Prepare datasets
-    train_loader = prepare_dataset(pos_data_dir="./data/train/pos", neg_data_dir="./data/train/neg")
-    val_loader = prepare_dataset(pos_data_dir="./data/val/pos", neg_data_dir="./data/val/neg")
-    test_loader = prepare_dataset(pos_data_dir="./data/test/pos", neg_data_dir="./data/test/neg")
+    train_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/train/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/train/")
+    val_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/val/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/val/")
+    test_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/test/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/test/")
 
 
     # Define model, loss, optimizer, and number of epochs
     patch_feature_extractor = PatchFeatureExtractor()
-    patch_feature_extractor.load_state_dict(torch.load("./artifacts/best_patch_model.pth"))
+    patch_feature_extractor.load_state_dict(torch.load("/home/mcloud-ai/Desktop/dc/br/data/mnv4_ssl_224.pth"))
 
     feature_extractor = FeatureExtractor(patch_feature_extractor)
     feature_extractor.to(device)
@@ -103,10 +109,13 @@ def train_autoencoder(device="cuda", epochs=70):
 
     model = MILClassifier(feature_extractor, attention_classifier)
 
-    best_model_path = "./artifacts/best_ae_model.pth" 
+    best_model_path = "best_full_model.pth" 
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, log_dir="./logs_mil", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_mil", 
                 best_model_path=best_model_path)
     # Test the model
     # test_model(model, best_model_path, test_loader)
+
+if __name__ == "__main__":
+    train_autoencoder()

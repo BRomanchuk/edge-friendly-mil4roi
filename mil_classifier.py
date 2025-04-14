@@ -56,7 +56,7 @@ class PatchFeatureExtractor(nn.Module):
         out = self.g(feature)
 
         # Normalize both the feature vector and the final output
-        return F.normalize(feature, dim=-1), F.normalize(out, dim=-1)
+        return F.normalize(out, dim=-1)
 
 class FeatureExtractor(nn.Module):
     def __init__(self, patch_level_model):
@@ -85,7 +85,8 @@ class AttentionClassifier(nn.Module):
         self.feature_dim = feature_dim
         self.num_heads = num_heads
         self.attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads)
-        self.fc = nn.Linear(feature_dim, 1)
+        self.fc1 = nn.Linear(feature_dim, 1)
+        self.fc2 = nn.Linear(40, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, features_batch):
@@ -99,19 +100,33 @@ class AttentionClassifier(nn.Module):
             torch.Tensor: Logits for each patch.
         """
         # Reshape features for multi-head attention
+        # print('features shape 1', features_batch.shape)
         features_batch = features_batch.permute(1, 0, 2)
-        attention_output, _ = self.attention(features_batch, features_batch, features_batch)
+        # print('features shape 2', features_batch.shape)
+        attention_output, z = self.attention(features_batch, features_batch, features_batch)
+        # print('z shape', z.shape)
+        # print('attention_output shape', attention_output.shape)
         attention_output = attention_output.permute(1, 0, 2)
-        logits_batch = self.fc(attention_output)
+        # print('att shape', attention_output.shape)
+        # flatten attention_output
+        # attention_output = attention_output.reshape((attention_output.shape[0], -1))
+        # print('att shape', attention_output.shape)
+        logits_batch = self.fc1(attention_output)
+        # print('logits shape', logits_batch.shape)
         logits_batch = self.sigmoid(logits_batch)
         logits_batch = logits_batch.squeeze(-1)
-        return logits_batch
+        prob = self.fc2(logits_batch).squeeze(-1)
+        prob = self.sigmoid(prob)
+        # print(prob)
+        # print('logits shape', logits_batch.shape)
+        return prob
     
 class MILClassifier(nn.Module):
     def __init__(self, feature_extractor, classifier_model):
         super(MILClassifier, self).__init__()
         self.feature_extractor = feature_extractor
         self.classifier_model = classifier_model
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
 
     def forward(self, patches_batch):
         features_batch = self.feature_extractor(patches_batch)
@@ -129,9 +144,12 @@ class MILClassifier(nn.Module):
         Returns:
             torch.Tensor: Loss value.
         """
+        self.optimizer.zero_grad()
         logits_batch = self(patches_batch)
         loss = F.binary_cross_entropy(logits_batch, labels)
-        return {"BCE": loss}
+        loss.backward()
+        self.optimizer.step()
+        return {"BCE": loss.item()}
     
     def val_step(self, patches_batch, labels):
         """

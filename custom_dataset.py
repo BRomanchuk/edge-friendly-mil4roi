@@ -4,6 +4,7 @@ import os
 import cv2  # Optional: for image loading
 import numpy as np
 from utils import resize_and_crop
+from torchvision import transforms
 
 class CustomDataset(Dataset):
     def __init__(self, pos_data_dir, neg_data_dir, transform=None):
@@ -48,9 +49,12 @@ class CustomDataset(Dataset):
         patches = resize_and_crop(image, target_size=(1904, 1120), patch_size=224)
 
         label = 1 if file_path in self.pos_paths else 0
+        label = torch.tensor(label, dtype=torch.float32)
 
         # Apply transformations if specified
         if self.transform is not None:
-            patches = self.transform(patches)
+            patches = [self.transform(patch) for patch in patches]
+            # Convert to tensor
+            patches = torch.stack(patches)
 
         return patches, label
