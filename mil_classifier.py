@@ -86,7 +86,7 @@ class AttentionClassifier(nn.Module):
         self.num_heads = num_heads
         self.attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads)
         self.fc1 = nn.Linear(feature_dim, 1)
-        self.fc2 = nn.Linear(40, 1)
+        self.fc2 = nn.Linear(144, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, features_batch):
