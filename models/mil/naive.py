@@ -8,6 +8,72 @@ import torch.nn.functional as F
 import timm
 
 
+class InstanceClassifier(nn.Module):
+    def __init__(self, feature_dim=128):
+        """
+        Initialize the InstanceClassifier.
+
+        Args:
+            feature_dim (int): Dimension of the input features.
+        """
+        super(InstanceClassifier, self).__init__()
+        self.feature_dim = feature_dim
+        self.fc1 = nn.Linear(feature_dim, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, features_batch):
+        """
+        Forward pass through the instance classifier.
+
+        Args:
+            features_batch (torch.Tensor): Batch of features.
+
+        Returns:
+            torch.Tensor: Logits for each patch.
+        """
+        logits_batch = self.fc1(features_batch)
+        logits_batch = self.sigmoid(logits_batch)
+        return logits_batch
+    
+
+class PoolingClassifier(nn.Module):
+    def __init__(self, instance_classifier, pooling_type='max'):
+        """
+        Initialize the PoolingClassifier.
+
+        Args:
+            instance_classifier (nn.Module): Instance classifier model.
+            type (str): Pooling type ('max' or 'mean').
+        """
+        super(PoolingClassifier, self).__init__()
+        self.instance_classifier = instance_classifier
+        self.pooling_type = pooling_type
+    
+    def forward(self, feature_bags_batch):
+        """
+        Forward pass through the max pooling classifier.
+
+        Args:
+            feature_bags_batch (torch.Tensor): Batch of feature bags.
+        Returns:
+            torch.Tensor: Logits for each bag.
+        """
+        logits_batch = []
+        for i in range(feature_bags_batch.shape[0]):
+            # Apply instance classifier to each bag
+            logits = self.instance_classifier(feature_bags_batch[i])
+            # Apply max pooling to get the bag-level prediction
+            if self.pooling_type == 'max':
+                logits = torch.max(logits, dim=0)[0]
+            elif self.pooling_type == 'mean':
+                logits = torch.mean(logits, dim=0)
+            else:
+                raise ValueError("Pooling type must be 'max' or 'mean'")
+            logits_batch.append(logits)
+        logits_batch = torch.stack(logits_batch).squeeze(1)
+        return logits_batch
+
+
 class AttentionClassifier(nn.Module):
     def __init__(self, feature_dim=128, num_heads=8):
         """
