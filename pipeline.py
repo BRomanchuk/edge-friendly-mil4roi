@@ -12,8 +12,13 @@ from tqdm import tqdm
 from custom_dataset import CustomDataset
 from mil_classifier import PatchFeatureExtractor, FeatureExtractor, AttentionClassifier, MILClassifier
 
+from models import dsmil
+from models import snuffy
 
-def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=256):
+import copy
+
+
+def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=64):
     """
     Prepares the dataset and dataloaders.
 
@@ -88,8 +93,99 @@ def train_model(model : MILClassifier, train_loader, val_loader, epochs=100, dev
             torch.save(model.state_dict(), best_model_path)
 
 
+def train_dsmil(device="cuda", epochs=360):
+    train_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/train/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/train/")
+    val_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/val/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/val/")
+    # test_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/test/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/test/")
 
-def train_autoencoder(device="cuda", epochs=10):
+    # Define model, loss, optimizer, and number of epochs
+    patch_feature_extractor = PatchFeatureExtractor()
+    patch_feature_extractor.load_state_dict(torch.load("/home/mcloud-ai/Desktop/dc/br/data/mnv4_ssl_224.pth"))
+    patch_feature_extractor.requires_grad_(False)
+
+    instnace_classifier = dsmil.IClassifier(patch_feature_extractor, feature_size=128, output_class=1)
+    # instnace_classifier.to(device)
+
+    bag_classifier = dsmil.BClassifier(input_size=128, output_class=1, dropout_v=0.0, nonlinear=True, passing_v=False)
+    # bag_classifier.to(device)
+
+    mil_net = dsmil.MILNet(instnace_classifier, bag_classifier)
+    # mil_net.to(device)
+
+    model = dsmil.BatchMILNet(mil_net)
+    model.to(device)
+
+    best_model_path = "best_dsmil_1try.pth"
+
+    # Train the model
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_dsmil_1try", 
+                best_model_path=best_model_path)
+
+
+def train_snuffy(device="cuda", epochs=360):
+    train_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/train/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/train/")
+    val_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/val/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/val/")
+    # test_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/test/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/test/")
+
+    # Define model, loss, optimizer, and number of epochs
+    patch_feature_extractor = PatchFeatureExtractor()
+    patch_feature_extractor.load_state_dict(torch.load("/home/mcloud-ai/Desktop/dc/br/data/mnv4_ssl_224.pth"))
+    patch_feature_extractor.requires_grad_(False)
+
+    instnace_classifier = snuffy.IClassifier(patch_feature_extractor, feature_size=128, output_class=1)
+    # instnace_classifier.to(device)
+    feature_size = 128
+    encoder_dropout = 0.0
+    big_lambda = 200
+    random_patch_share = 0.0
+    depth = 1
+    mlp_multiplier = 4
+    num_classes = 1
+
+    c = copy.deepcopy
+
+    attn = snuffy.MultiHeadedAttention(
+        h=2,
+        d_model=feature_size,
+    ).to(device)
+
+    
+    ff = snuffy.PositionwiseFeedForward(
+        feature_size,
+        feature_size * mlp_multiplier,
+        'relu',
+        encoder_dropout
+    ).to(device)
+    bag_classifier = snuffy.BClassifier(
+        snuffy.Encoder(
+            snuffy.EncoderLayer(
+                feature_size,
+                c(attn),
+                c(ff),
+                encoder_dropout,
+                big_lambda,
+                random_patch_share
+            ), depth
+        ),
+        num_classes,
+        feature_size
+    )
+    # bag_classifier.to(device)
+
+    mil_net = snuffy.MILNet(instnace_classifier, bag_classifier)
+    # mil_net.to(device)
+
+    model = snuffy.BatchMILNet(mil_net)
+    model.to(device)
+
+    best_model_path = "best_snuffy_1try.pth"
+
+    # Train the model
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_snuffy_1try", 
+                best_model_path=best_model_path)
+
+
+def train_naive(device="cuda", epochs=360):
     # Prepare datasets
     train_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/train/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/train/")
     val_loader = prepare_dataset(pos_data_dir="/home/mcloud-ai/Desktop/dc/br/data/pos_frames_split/val/", neg_data_dir="/home/mcloud-ai/Desktop/dc/br/data/neg_frames_hfps_split/val/")
@@ -101,21 +197,23 @@ def train_autoencoder(device="cuda", epochs=10):
     patch_feature_extractor.load_state_dict(torch.load("/home/mcloud-ai/Desktop/dc/br/data/mnv4_ssl_224.pth"))
 
     feature_extractor = FeatureExtractor(patch_feature_extractor)
-    feature_extractor.to(device)
+    # feature_extractor.to(device)
     feature_extractor.requires_grad_(False)
 
-    attention_classifier = AttentionClassifier(feature_dim=128, num_heads=2)
-    attention_classifier.to(device)
+    attention_classifier = AttentionClassifier(feature_dim=128, num_heads=8)
+    # attention_classifier.to(device)
 
     model = MILClassifier(feature_extractor, attention_classifier)
 
-    best_model_path = "best_full_model.pth" 
+    best_model_path = "best_full_model_8heads144patches.pth" 
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_mil", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_mil_360_8heads144patches", 
                 best_model_path=best_model_path)
     # Test the model
     # test_model(model, best_model_path, test_loader)
 
 if __name__ == "__main__":
-    train_autoencoder()
+    train_snuffy()
+    # train_dsmil()
+    # train_naive()
