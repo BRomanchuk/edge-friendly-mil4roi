@@ -7,7 +7,7 @@ import timm
 
 
 class PatchFeatureExtractor(nn.Module):
-    def __init__(self, feature_dim=128, embedding_dim=512):
+    def __init__(self, feature_dim=128):
         """
         Args:
             feature_dim (int): The size of the final feature vector output.
@@ -52,6 +52,53 @@ class PatchFeatureExtractor(nn.Module):
 
         # Normalize both the feature vector and the final output
         return F.normalize(out, dim=-1)
+
+class MNv3PatchFeatureExtractor(PatchFeatureExtractor):
+    def __init__(self, feature_dim=128):
+        """
+        Args:
+            feature_dim (int): The size of the final feature vector output.
+            embedding_dim (int): The size of the embedding vector before the projection head.
+        """
+        super(PatchFeatureExtractor, self).__init__()
+
+        model = timm.create_model('mobilenetv3_small_100', pretrained=True)
+        embedding_dim = model.classifier.in_features
+        model.classifier = nn.Identity()
+
+        self.f = model
+
+        # Projection head: reduces embedding to the desired feature dimension
+        self.g = nn.Sequential(
+            nn.Linear(embedding_dim, 256, bias=False),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, feature_dim, bias=True)
+        )
+
+
+class EffViTPatchFeatureExtractor(PatchFeatureExtractor):
+    def __init__(self, feature_dim=128):
+        """
+        Args:
+            feature_dim (int): The size of the final feature vector output.
+            embedding_dim (int): The size of the embedding vector before the projection head.
+        """
+        super(EffViTPatchFeatureExtractor, self).__init__()
+
+        model = timm.create_model('efficientvit_b1', pretrained=True)
+        embedding_dim = model.head.classifier[0].in_features
+        model.head.classifier = nn.Identity()
+
+        self.f = model
+
+        # Projection head: reduces embedding to the desired feature dimension
+        self.g = nn.Sequential(
+            nn.Linear(embedding_dim, 256, bias=False),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, feature_dim, bias=True)
+        )
 
 
 class FeatureExtractor(nn.Module):

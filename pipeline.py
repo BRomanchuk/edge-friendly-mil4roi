@@ -11,10 +11,12 @@ import copy
 
 from custom_dataset import CustomDataset
 
-from models.feature_extractor import PatchFeatureExtractor, FeatureExtractor
+from models.feature_extractor import PatchFeatureExtractor, \
+    MNv3PatchFeatureExtractor, EffViTPatchFeatureExtractor, FeatureExtractor
 
 from models.mil.base import TrainableModel
 from models.mil.naive import AttentionClassifier, MILClassifier
+from models.mil.naive import InstanceClassifier, PoolingClassifier
 from models.mil import dsmil
 from models.mil import snuffy
 
@@ -120,10 +122,10 @@ def train_dsmil(device="cuda", epochs=360):
     model = dsmil.BatchMILNet(mil_net)
     model.to(device)
 
-    best_model_path = "best_dsmil_1try.pth"
+    best_model_path = "./artifacts/best_dsmil_e3_weight_decay.pth"
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_dsmil_1try", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./tb_logs/logs_dsmil_e3_weight_decay", 
                 best_model_path=best_model_path)
 
 
@@ -222,7 +224,43 @@ def train_naive(device="cuda", epochs=360):
                 best_model_path=best_model_path)
 
 
+def train_pooling(device="cuda:0", epochs=100, pooling_type="max"):
+    train_loader = prepare_dataset(
+        pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
+        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
+    )
+    val_loader = prepare_dataset(
+        pos_data_dir=os.path.join(config.POS_DATA_PATH, "val"),
+        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "val")
+    )
+
+    # Define feature extractor
+    patch_feature_extractor = PatchFeatureExtractor()
+    # patch_feature_extractor = EffViTPatchFeatureExtractor()
+    # patch_feature_extractor = MNv3PatchFeatureExtractor()
+    # patch_feature_extractor.load_state_dict(torch.load())
+    patch_feature_extractor.load_state_dict(torch.load(config.FEATURE_EXTRACTOR_PATH))
+    patch_feature_extractor.requires_grad_(False)
+
+    feature_extractor = FeatureExtractor(patch_feature_extractor)
+    feature_extractor.requires_grad_(False)
+
+    instance_classifier = InstanceClassifier(feature_dim=128)
+
+    pooling_classifier = PoolingClassifier(instance_classifier, pooling_type=pooling_type)
+
+    model = MILClassifier(feature_extractor, pooling_classifier)
+    model.to(device)
+
+    best_model_path = f"./artifacts/best_{pooling_type}pool_model.pth"
+
+    # Train the model
+    train_model(model, train_loader, val_loader, epochs, device, log_dir=f"./tb_logs/logs_mil_{pooling_type}pool_1fc", 
+                best_model_path=best_model_path)
+
+
 if __name__ == "__main__":
     train_snuffy()
     # train_dsmil()
     # train_naive()
+    # train_pooling(pooling_type="max")
