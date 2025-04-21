@@ -72,6 +72,15 @@ class PoolingClassifier(nn.Module):
             logits_batch.append(logits)
         logits_batch = torch.stack(logits_batch).squeeze(1)
         return logits_batch
+    
+    def test_step(self, feature_bags_batch):
+        all_logits = []
+        for i in range(feature_bags_batch.shape[0]):
+            # Apply instance classifier to each bag
+            logits = self.instance_classifier(feature_bags_batch[i])
+            all_logits.append(logits)
+        all_logits = torch.stack(all_logits).squeeze(1)
+        return all_logits
 
 
 class AttentionClassifier(nn.Module):
@@ -168,6 +177,22 @@ class MILClassifier(nn.Module):
             logits_batch = self(patches_batch)
             loss = F.binary_cross_entropy(logits_batch, labels)
         return {"BCE": loss}
+    
+    def test_step(self, patches_batch):
+        """
+        Perform a test step.
+
+        Args:
+            patches_batch (torch.Tensor): Batch of image patches.
+
+        Returns:
+            torch.Tensor: Logits for each patch.
+        """
+        with torch.no_grad():
+            features = self.feature_extractor(patches_batch)
+            logits_batch = self.classifier_model.test_step(features)
+            
+        return logits_batch
     
     def is_better(self, current_losses, best_losses):
         if len(best_losses) == 0:

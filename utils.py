@@ -11,7 +11,7 @@ def resize_and_crop(image, target_size=(1904, 1120), patch_size=224):
                 patches.append(patch)
     return np.array(patches)
 
-def yolo_to_patch_matrix(boxes, patch_matrix_size=(17, 10)):
+def yolo_to_patch_matrix(boxes, patch_matrix_size=(16, 9)):
     """
     Convert YOLO bounding box coordinates to patch indices in a matrix.
     Result is a 2D binary matrix with ones indicating the patch indices with where the bounding box is located.
@@ -47,3 +47,29 @@ def yolo_to_patch_matrix(boxes, patch_matrix_size=(17, 10)):
 
     return patch_matrix
 
+def patch_probs_to_probs_matrix(batch_of_patch_probs, patch_matrix_size=(16, 9)):
+    """
+    Convert a batch of patch probabilities to a matrix of probabilities.
+    The resulting matrix has the same size as the patch matrix.
+    """
+    batch_size = batch_of_patch_probs.shape[0]
+    probs_matrix = np.zeros((batch_size, patch_matrix_size[0]+1, patch_matrix_size[1]+1), dtype=np.float32)
+
+    for i in range(batch_size):
+        p_matrix = np.reshape(batch_of_patch_probs[i], patch_matrix_size)
+        # handle consequtive overlaping patches
+        q_matrix = 1 - p_matrix
+        q_matrix_overlapped = np.zeros((patch_matrix_size[0]+1, patch_matrix_size[1]+1), dtype=np.float32)
+        q_matrix_overlapped[1:-1, 1:-1] = (q_matrix[:-1, :-1] * q_matrix[1:, :-1] * q_matrix[:-1, 1:] * q_matrix[1:, 1:])
+        q_matrix_overlapped[0, 0] = q_matrix[0, 0]
+        q_matrix_overlapped[0, -1] = q_matrix[0, -1]
+        q_matrix_overlapped[-1, 0] = q_matrix[-1, 0]
+        q_matrix_overlapped[-1, -1] = q_matrix[-1, -1]
+        q_matrix_overlapped[0, 1:-1] = q_matrix[0, :-1] * q_matrix[0, 1:]
+        q_matrix_overlapped[-1, 1:-1] = q_matrix[-1, :-1] * q_matrix[-1, 1:]
+        q_matrix_overlapped[1:-1, 0] = q_matrix[:-1, 0] * q_matrix[1:, 0]
+        q_matrix_overlapped[1:-1, -1] = q_matrix[:-1, -1] * q_matrix[1:, -1]
+        probs_matrix[i] = 1 - q_matrix_overlapped
+        probs_matrix[i] = (probs_matrix[i] // 0.01) * 0.01
+
+    return probs_matrix

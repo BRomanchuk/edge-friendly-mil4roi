@@ -91,7 +91,7 @@ class BatchMILNet(nn.Module):
     def __init__(self, mil_net):
         super(BatchMILNet, self).__init__()
         self.mil_net = mil_net
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=0.001, betas=(0.5, 0.9), weight_decay=5e-3)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=0.001, weight_decay=5e-4)
         #self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, args.num_epoch, 0)
         
     def forward(self, batch_of_bags):
@@ -107,6 +107,12 @@ class BatchMILNet(nn.Module):
         As = torch.stack(As)
         Bs = torch.stack(Bs)
         return classes, prediction_bags, As, Bs
+
+    def test_step(self, x):
+        self.eval()
+        with torch.no_grad():
+            classes, prediction_bags, A, B = self(x)
+        return classes
     
     def train_step(self, x, y):
         self.train()
