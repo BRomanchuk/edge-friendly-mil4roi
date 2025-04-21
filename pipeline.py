@@ -98,7 +98,7 @@ def train_model(
             torch.save(model.state_dict(), best_model_path)
 
 
-def train_dsmil(device="cuda", epochs=360):
+def train_dsmil(device="cuda", epochs=360, fe_model='effvit'):
     train_loader = prepare_dataset(
         pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
         neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
@@ -107,10 +107,16 @@ def train_dsmil(device="cuda", epochs=360):
         pos_data_dir=os.path.join(config.POS_DATA_PATH, "val"),
         neg_data_dir=os.path.join(config.NEG_DATA_PATH, "val")
     )
-
     # Define feature extractor
-    patch_feature_extractor = PatchFeatureExtractor()
-    patch_feature_extractor.load_state_dict(torch.load(config.FEATURE_EXTRACTOR_PATH))
+    if fe_model == 'mn4':
+        patch_feature_extractor = PatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.MN4_PATH))
+    elif fe_model == 'mn3':
+        patch_feature_extractor = MNv3PatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.MN3_PATH))
+    elif fe_model == 'effvit':
+        patch_feature_extractor = EffViTPatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.VIT_PATH))  
     patch_feature_extractor.requires_grad_(False)
 
     instnace_classifier = dsmil.IClassifier(patch_feature_extractor, feature_size=128, output_class=1)
@@ -122,10 +128,10 @@ def train_dsmil(device="cuda", epochs=360):
     model = dsmil.BatchMILNet(mil_net)
     model.to(device)
 
-    best_model_path = "./artifacts/best_dsmil_e3_weight_decay.pth"
+    best_model_path = "./artifacts/best_dsmil_wo_betas_e3_5e4_weight_decay.pth"
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir="./tb_logs/logs_dsmil_e3_weight_decay", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir="./tb_logs/logs_dsmil_wo_betas_e3_5e4_weight_decay", 
                 best_model_path=best_model_path)
 
 
@@ -224,7 +230,7 @@ def train_naive(device="cuda", epochs=360):
                 best_model_path=best_model_path)
 
 
-def train_pooling(device="cuda:0", epochs=100, pooling_type="max"):
+def train_pooling(device="cuda:0", epochs=100, pooling_type="max", fe_model='effvit'):
     train_loader = prepare_dataset(
         pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
         neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
@@ -235,11 +241,15 @@ def train_pooling(device="cuda:0", epochs=100, pooling_type="max"):
     )
 
     # Define feature extractor
-    patch_feature_extractor = PatchFeatureExtractor()
-    # patch_feature_extractor = EffViTPatchFeatureExtractor()
-    # patch_feature_extractor = MNv3PatchFeatureExtractor()
-    # patch_feature_extractor.load_state_dict(torch.load())
-    patch_feature_extractor.load_state_dict(torch.load(config.FEATURE_EXTRACTOR_PATH))
+    if fe_model == 'mn4':
+        patch_feature_extractor = PatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.MN4_PATH))
+    elif fe_model == 'mn3':
+        patch_feature_extractor = MNv3PatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.MN3_PATH))
+    elif fe_model == 'effvit':
+        patch_feature_extractor = EffViTPatchFeatureExtractor()
+        patch_feature_extractor.load_state_dict(torch.load(config.VIT_PATH))  
     patch_feature_extractor.requires_grad_(False)
 
     feature_extractor = FeatureExtractor(patch_feature_extractor)
