@@ -76,14 +76,28 @@ class MILNet(nn.Module):
     def train_step(self, x, y):
         self.train()
         classes, prediction_bag, A, B = self.forward(x)
-        loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
+        max_prediction, index = torch.max(classes, 0)
+
+        loss_bag = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(1, -1))
+        loss_max = F.binary_cross_entropy_with_logits(max_prediction.view(-1), y.view(1, -1))
+
+        loss_total = 0.5*loss_bag + 0.5*loss_max
+        loss = loss_total.mean()
+        # loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
         return {"BCE": loss}
     
     def val_step(self, x, y):
         self.eval()
         with torch.no_grad():
             classes, prediction_bag, A, B = self.forward(x)
-            loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
+            max_prediction, index = torch.max(classes, 0)
+
+            loss_bag = F.binary_cross_entropy_with_logits(prediction_bag.view(1, -1), y.view(1, -1))
+            loss_max = F.binary_cross_entropy_with_logits(max_prediction.view(1, -1), y.view(1, -1))
+
+            loss_total = 0.5*loss_bag + 0.5*loss_max
+            loss = loss_total.mean()
+            # loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
         return {"BCE": loss}
     
 
@@ -92,6 +106,9 @@ class BatchMILNet(nn.Module):
         super(BatchMILNet, self).__init__()
         self.mil_net = mil_net
         self.optimizer = torch.optim.Adam(self.parameters(), lr=0.001, weight_decay=5e-4)
+        self.criterion = nn.BCEWithLogitsLoss()
+        # self.optimizer = torch.optim.Adam(self.parameters(), lr=0.001, weight_decay=5e-4)
+        # self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-4, weight_decay=1e-3)
         #self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, args.num_epoch, 0)
         
     def forward(self, batch_of_bags):
@@ -118,7 +135,15 @@ class BatchMILNet(nn.Module):
         self.train()
         self.optimizer.zero_grad()
         classes, prediction_bag, A, B = self(x)
-        loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
+
+        max_prediction, index = torch.max(classes, 1)
+        
+        loss_bag = self.criterion(prediction_bag.view(-1), y.view(-1))
+        loss_max = self.criterion(max_prediction.view(-1), y.view(-1))
+
+        loss_total = 0.5*loss_bag + 0.5*loss_max
+        loss = loss_total.mean()
+
         loss.backward()
         self.optimizer.step()
         return {"BCE": loss}
@@ -127,7 +152,18 @@ class BatchMILNet(nn.Module):
         self.eval()
         with torch.no_grad():
             classes, prediction_bag, A, B = self(x)
-            loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
+
+            max_prediction, index = torch.max(classes, 1)
+
+            
+            loss_bag = self.criterion(prediction_bag.view(-1), y.view(-1))
+
+            loss_max = self.criterion(max_prediction.view(-1), y.view(-1))
+
+
+            loss_total = 0.5*loss_bag + 0.5*loss_max
+            loss = loss_total.mean()
+            # loss = F.binary_cross_entropy_with_logits(prediction_bag.view(-1), y.view(-1))
         return {"BCE": loss}
     
     def is_better(self, current_losses, best_losses):

@@ -105,7 +105,7 @@ class FeatureExtractor(nn.Module):
     def __init__(self, patch_level_model):
         super(FeatureExtractor, self).__init__()
         self.patch_level_model = patch_level_model
-        self.patch_level_model.eval()
+        # self.patch_level_model.eval()
         self.patch_level_model.requires_grad_(False)
     
     def forward(self, patches_batch):
