@@ -1,10 +1,11 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
+
 import os
-import cv2  # Optional: for image loading
-import numpy as np
+import cv2  
+
 from utils import resize_and_crop
-from torchvision import transforms
+
 
 class CustomDataset(Dataset):
     def __init__(self, pos_data_dir, neg_data_dir, transform=None):
@@ -21,25 +22,19 @@ class CustomDataset(Dataset):
         self.pos_files = os.listdir(pos_data_dir)
         self.neg_files = os.listdir(neg_data_dir)
 
+        self.pos_files = [f for f in self.pos_files if f.endswith('.jpg') or f.endswith('.png')]
+        self.neg_files = [f for f in self.neg_files if f.endswith('.jpg') or f.endswith('.png')]
+
         self.pos_paths = [os.path.join(pos_data_dir, f) for f in self.pos_files]
         self.neg_paths = [os.path.join(neg_data_dir, f) for f in self.neg_files]
 
         self.data_files = self.pos_paths + self.neg_paths
-        # shuffle the data
-        np.random.shuffle(self.data_files)
 
     def __len__(self):
         """Returns the total number of samples"""
         return len(self.data_files)
 
     def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index of the sample to load.
-
-        Returns:
-            sample (dict): A dictionary containing the data and the label.
-        """
         file_path = self.data_files[index]
 
         # Load image (modify this as per your data format)

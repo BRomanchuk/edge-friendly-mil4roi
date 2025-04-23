@@ -1,6 +1,8 @@
 config.py
 artifacts/
 tb_logs/
+*video*/
+etc/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

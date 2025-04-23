@@ -21,18 +21,7 @@ from models.mil import dsmil
 from models.mil import snuffy
 
 
-def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=64):
-    """
-    Prepares the dataset and dataloader.
-
-    Args:
-        pos_data_dir (str): Directory containing positive samples.
-        neg_data_dir (str): Directory containing negative samples.
-        batch_size (int): Batch size for dataloader.
-
-    Returns:
-        DataLoader: Dataloader for training data.
-    """
+def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=32):
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
@@ -40,6 +29,54 @@ def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=64):
     dataset = CustomDataset(pos_data_dir, neg_data_dir, transform=transform)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
+
+
+def get_train_val_loaders(data_type, batch_size=64):
+    if data_type == 'sod4sb':
+        pos_data_dir = "../sod4sb_pos"
+        neg_data_dir = "../sod4sb_neg"
+    elif data_type == 'single_video':
+        pos_data_dir = "./single_video_split/pos"
+        neg_data_dir = "./single_video_split/neg"
+    else:
+        pos_data_dir = config.POS_DATA_PATH
+        neg_data_dir = config.NEG_DATA_PATH
+
+    print('Dataset:', data_type)
+
+    train_loader = prepare_dataset(
+        pos_data_dir=os.path.join(pos_data_dir, "train"),
+        neg_data_dir=os.path.join(neg_data_dir, "train"),
+        batch_size=batch_size
+    )
+    val_loader = prepare_dataset(
+        pos_data_dir=os.path.join(pos_data_dir, "val"),
+        neg_data_dir=os.path.join(neg_data_dir, "val"),
+        batch_size=batch_size
+    )
+    return train_loader, val_loader
+
+
+def get_patch_feature_extractor(fe_model, data_type, device='cuda'):
+    if fe_model == 'mn4':
+        patch_feature_extractor = PatchFeatureExtractor()
+        if data_type == 'sod4sb':
+            patch_feature_extractor.load_state_dict(torch.load(config.SOD4SB_MN4_PATH, map_location=device))
+        else:
+            patch_feature_extractor.load_state_dict(torch.load(config.MN4_PATH, map_location=device))
+    elif fe_model == 'mn3':
+        patch_feature_extractor = MNv3PatchFeatureExtractor()
+        if data_type == 'sod4sb':
+            patch_feature_extractor.load_state_dict(torch.load(config.SOD4SB_MN3_PATH, map_location=device))
+        else:
+            patch_feature_extractor.load_state_dict(torch.load(config.MN3_PATH, map_location=device))
+    elif fe_model == 'effvit':
+        patch_feature_extractor = EffViTPatchFeatureExtractor()
+        if data_type == 'sod4sb':
+            patch_feature_extractor.load_state_dict(torch.load(config.SOD4SB_VIT_PATH, map_location=device))
+        else:
+            patch_feature_extractor.load_state_dict(torch.load(config.VIT_PATH, map_location=device))
+    return patch_feature_extractor
 
 
 def train_model(
@@ -98,29 +135,15 @@ def train_model(
             torch.save(model.state_dict(), best_model_path)
 
 
-def train_dsmil(device="cuda", epochs=360, fe_model='effvit'):
-    train_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
-    )
-    val_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "val"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "val")
-    )
+def train_dsmil(device="cuda", epochs=360, fe_model='mn4', data_type='sod4sb', batch_size=64):
+    # Prepare dataset
+    train_loader, val_loader = get_train_val_loaders(data_type=data_type, batch_size=batch_size)
+
     # Define feature extractor
-    if fe_model == 'mn4':
-        patch_feature_extractor = PatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.MN4_PATH))
-    elif fe_model == 'mn3':
-        patch_feature_extractor = MNv3PatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.MN3_PATH))
-    elif fe_model == 'effvit':
-        patch_feature_extractor = EffViTPatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.VIT_PATH))  
+    patch_feature_extractor = get_patch_feature_extractor(fe_model=fe_model, data_type=data_type, device=device) 
     patch_feature_extractor.requires_grad_(False)
 
     instnace_classifier = dsmil.IClassifier(patch_feature_extractor, feature_size=128, output_class=1)
-
     bag_classifier = dsmil.BClassifier(input_size=128, output_class=1, dropout_v=0.0, nonlinear=True, passing_v=False)
 
     mil_net = dsmil.MILNet(instnace_classifier, bag_classifier)
@@ -128,10 +151,11 @@ def train_dsmil(device="cuda", epochs=360, fe_model='effvit'):
     model = dsmil.BatchMILNet(mil_net)
     model.to(device)
 
-    best_model_path = "./artifacts/best_dsmil_wo_betas_e3_5e4_weight_decay.pth"
+    best_model_path = f"./artifacts/best_{data_type}_dsmil_lr1e3_wd0_{fe_model}.pth"
+    log_dir = f"./tb_logs/logs_{data_type}_dsmil_lr1e3_wd0_{fe_model}"
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir="./tb_logs/logs_dsmil_wo_betas_e3_5e4_weight_decay", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir=log_dir, 
                 best_model_path=best_model_path)
 
 
@@ -201,56 +225,49 @@ def train_snuffy(device="cuda", epochs=360):
                 best_model_path=best_model_path)
 
 
-def train_naive(device="cuda", epochs=360):
-    train_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
-    )
-    val_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "val"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "val")
-    )
+def train_naive(
+    device="cuda", 
+    epochs=360, 
+    fe_model='mn4', 
+    data_type='sod4sb', 
+    batch_size=64
+):
+    num_heads = 1
+    # Prepare dataset
+    train_loader, val_loader = get_train_val_loaders(data_type=data_type, batch_size=batch_size)
 
     # Define feature extractor
-    patch_feature_extractor = PatchFeatureExtractor()
-    patch_feature_extractor.load_state_dict(torch.load(config.FEATURE_EXTRACTOR_PATH))
-    patch_feature_extractor.requires_grad_(False)
+    patch_feature_extractor = get_patch_feature_extractor(fe_model=fe_model, data_type=data_type, device=device) 
 
     feature_extractor = FeatureExtractor(patch_feature_extractor)
     feature_extractor.requires_grad_(False)
 
-    attention_classifier = AttentionClassifier(feature_dim=128, num_heads=8)
+    attention_classifier = AttentionClassifier(feature_dim=128, num_heads=num_heads)
 
     model = MILClassifier(feature_extractor, attention_classifier)
+    model.to(device)
 
-    best_model_path = "best_full_model_8heads144patches.pth" 
+    best_model_path = f"./artifacts/best_single_video_naive_att_model_lr1e4_wo_wd_{num_heads}heads_{fe_model}.pth" 
+    log_dir = f"./tb_logs/logs_single_video_naive_att_lr1e4_wo_wd_{num_heads}heads_{fe_model}"
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir="./logs_mil_360_8heads144patches", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir=log_dir,
                 best_model_path=best_model_path)
 
 
-def train_pooling(device="cuda:0", epochs=100, pooling_type="max", fe_model='effvit'):
-    train_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "train"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "train")
-    )
-    val_loader = prepare_dataset(
-        pos_data_dir=os.path.join(config.POS_DATA_PATH, "val"),
-        neg_data_dir=os.path.join(config.NEG_DATA_PATH, "val")
-    )
+def train_pooling(
+    device="cuda:0", 
+    epochs=100, 
+    pooling_type="max", 
+    fe_model='mn4', 
+    data_type='sod4sb', 
+    batch_size=64
+):
+    # Prepare dataset
+    train_loader, val_loader = get_train_val_loaders(data_type=data_type, batch_size=batch_size)
 
     # Define feature extractor
-    if fe_model == 'mn4':
-        patch_feature_extractor = PatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.MN4_PATH))
-    elif fe_model == 'mn3':
-        patch_feature_extractor = MNv3PatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.MN3_PATH))
-    elif fe_model == 'effvit':
-        patch_feature_extractor = EffViTPatchFeatureExtractor()
-        patch_feature_extractor.load_state_dict(torch.load(config.VIT_PATH))  
-    patch_feature_extractor.requires_grad_(False)
+    patch_feature_extractor = get_patch_feature_extractor(fe_model=fe_model, data_type=data_type, device=device) 
 
     feature_extractor = FeatureExtractor(patch_feature_extractor)
     feature_extractor.requires_grad_(False)
@@ -262,15 +279,16 @@ def train_pooling(device="cuda:0", epochs=100, pooling_type="max", fe_model='eff
     model = MILClassifier(feature_extractor, pooling_classifier)
     model.to(device)
 
-    best_model_path = f"./artifacts/best_{pooling_type}pool_model.pth"
+    best_model_path = f"./artifacts/best_{data_type}_lr1e3_bs{batch_size}_wd0_{fe_model}_{pooling_type}pool_model.pth"
+    log_dir = f"./tb_logs/logs_{data_type}_lr1e3_bs{batch_size}_wd0_{fe_model}_{pooling_type}pool_1fc"
 
     # Train the model
-    train_model(model, train_loader, val_loader, epochs, device, log_dir=f"./tb_logs/logs_mil_{pooling_type}pool_1fc", 
+    train_model(model, train_loader, val_loader, epochs, device, log_dir=log_dir,
                 best_model_path=best_model_path)
 
 
-if __name__ == "__main__":
-    train_snuffy()
+# if __name__ == "__main__":
+    # train_snuffy()
     # train_dsmil()
     # train_naive()
     # train_pooling(pooling_type="max")
