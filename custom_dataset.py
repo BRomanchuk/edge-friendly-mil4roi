@@ -8,16 +8,14 @@ from utils import resize_and_crop
 
 
 class CustomDataset(Dataset):
-    def __init__(self, pos_data_dir, neg_data_dir, transform=None):
-        """
-        Args:
-            data_dir (str): Path to the directory containing data files.
-            transform (callable, optional): Optional transform to be applied on a sample.
-        """
+    def __init__(self, pos_data_dir, neg_data_dir, transform=None, ret_img=False):
+        
         self.pos_data_dir = pos_data_dir
         self.neg_data_dir = neg_data_dir
         
         self.transform = transform
+
+        self.ret_img = ret_img
         
         self.pos_files = os.listdir(pos_data_dir)
         self.neg_files = os.listdir(neg_data_dir)
@@ -42,6 +40,7 @@ class CustomDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         patches = resize_and_crop(image, target_size=(1904, 1120), patch_size=224)
+        # patches = resize_and_crop(image, target_size=(1920, 1088), patch_size=128)
 
         label = 1 if file_path in self.pos_paths else 0
         label = torch.tensor(label, dtype=torch.float32)
@@ -51,5 +50,9 @@ class CustomDataset(Dataset):
             patches = [self.transform(patch) for patch in patches]
             # Convert to tensor
             patches = torch.stack(patches)
+        
+        if self.ret_img:
+            # Return the image as well
+            return patches, label, image
 
         return patches, label

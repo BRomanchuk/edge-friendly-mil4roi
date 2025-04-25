@@ -21,23 +21,38 @@ from models.mil import dsmil
 from models.mil import snuffy
 
 
-def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=32):
+def prepare_dataset(pos_data_dir, neg_data_dir, batch_size=32, ret_img=False):
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
 
-    dataset = CustomDataset(pos_data_dir, neg_data_dir, transform=transform)
+    dataset = CustomDataset(pos_data_dir, neg_data_dir, transform=transform, ret_img=ret_img)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
 
 
-def get_train_val_loaders(data_type, batch_size=64):
+def get_train_val_loaders(data_type, batch_size=64, ret_img=False):
     if data_type == 'sod4sb':
         pos_data_dir = "../sod4sb_pos"
         neg_data_dir = "../sod4sb_neg"
     elif data_type == 'single_video':
         pos_data_dir = "./single_video_split/pos"
         neg_data_dir = "./single_video_split/neg"
+    elif data_type == 'single_video_big':
+        pos_data_dir = "./single_video_frames/pos"
+        neg_data_dir = "./single_video_frames/neg"
+    elif data_type == 'single_video_crop':
+        pos_data_dir = "./single_video_frames_cropped/pos"
+        neg_data_dir = "./single_video_frames_cropped/neg"
+    elif data_type == 'dp_large':
+        pos_data_dir = "../ds_dronopad_large/pos"
+        neg_data_dir = "../ds_dronopad_large/neg"
+    elif data_type == 'dp_large100':
+        pos_data_dir = "../ds_dronopad_large100/pos"
+        neg_data_dir = "../ds_dronopad_large100/neg"
+    elif data_type == 'dp_large100_crop':
+        pos_data_dir = "../ds_dronopad_large100_cropped/pos"
+        neg_data_dir = "../ds_dronopad_large100_cropped/neg"
     else:
         pos_data_dir = config.POS_DATA_PATH
         neg_data_dir = config.NEG_DATA_PATH
@@ -47,12 +62,14 @@ def get_train_val_loaders(data_type, batch_size=64):
     train_loader = prepare_dataset(
         pos_data_dir=os.path.join(pos_data_dir, "train"),
         neg_data_dir=os.path.join(neg_data_dir, "train"),
-        batch_size=batch_size
+        batch_size=batch_size,
+        ret_img=ret_img
     )
     val_loader = prepare_dataset(
         pos_data_dir=os.path.join(pos_data_dir, "val"),
         neg_data_dir=os.path.join(neg_data_dir, "val"),
-        batch_size=batch_size
+        batch_size=batch_size,
+        ret_img=ret_img
     )
     return train_loader, val_loader
 
@@ -136,6 +153,7 @@ def train_model(
 
 
 def train_dsmil(device="cuda", epochs=360, fe_model='mn4', data_type='sod4sb', batch_size=64):
+    # python train_dsmil.py --device=cuda:0 --data_type=dp_large100 --fe_model=mn4 --epochs=1000
     # Prepare dataset
     train_loader, val_loader = get_train_val_loaders(data_type=data_type, batch_size=batch_size)
 
@@ -151,8 +169,11 @@ def train_dsmil(device="cuda", epochs=360, fe_model='mn4', data_type='sod4sb', b
     model = dsmil.BatchMILNet(mil_net)
     model.to(device)
 
-    best_model_path = f"./artifacts/best_{data_type}_dsmil_lr1e3_wd0_{fe_model}.pth"
-    log_dir = f"./tb_logs/logs_{data_type}_dsmil_lr1e3_wd0_{fe_model}"
+    best_model_path = f"./artifacts/best_maxloss_ps224_crit_600e{data_type}_dsmil_lr1e3_wd5e4_{fe_model}.pth"
+    log_dir = f"./tb_logs/logs_maxloss_ps224_crit_600e{data_type}_dsmil_lr1e3_wd5e4_{fe_model}"
+
+    # best_model_path = f"./artifacts/test_maxloss_dsmil.pth"
+    # log_dir = f"./tb_logs/test_maxloss_dsmil"
 
     # Train the model
     train_model(model, train_loader, val_loader, epochs, device, log_dir=log_dir, 

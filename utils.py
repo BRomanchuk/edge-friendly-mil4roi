@@ -1,6 +1,9 @@
 import numpy as np
 import cv2
 
+import random
+
+
 def resize_and_crop(image, target_size=(1904, 1120), patch_size=224):
     image = cv2.resize(image, target_size)
     patches = []
@@ -10,6 +13,23 @@ def resize_and_crop(image, target_size=(1904, 1120), patch_size=224):
             if patch.shape[0] == patch_size and patch.shape[1] == patch_size:
                 patches.append(patch)
     return np.array(patches)
+
+
+def random_crop_around_point(image, x_rel, y_rel, image_size=(1920, 1080), crop_size=(960, 540)):
+    buffer = 50
+    x = int(x_rel * image_size[0])
+    y = int(y_rel * image_size[1])
+    x1min = max(0, x - crop_size[0] + buffer)
+    x1max = max(min(x - buffer, image_size[0] - crop_size[0]), x1min)
+    y1min = max(0, y - crop_size[1] + buffer)
+    y1max = max(min(y - buffer, image_size[1] - crop_size[1]), y1min)
+    x1 = random.randint(x1min, x1max)
+    y1 = random.randint(y1min, y1max)
+    x2 = x1 + crop_size[0]
+    y2 = y1 + crop_size[1]
+    image = cv2.resize(image, image_size)
+    return image[y1:y2, x1:x2]
+
 
 def yolo_to_patch_matrix(boxes, patch_matrix_size=(16, 9)):
     """
@@ -47,7 +67,7 @@ def yolo_to_patch_matrix(boxes, patch_matrix_size=(16, 9)):
 
     return patch_matrix
 
-def patch_probs_to_probs_matrix(batch_of_patch_probs, patch_matrix_size=(16, 9)):
+def patch_probs_to_probs_matrix(batch_of_patch_probs, patch_matrix_size=(9, 16)):
     """
     Convert a batch of patch probabilities to a matrix of probabilities.
     The resulting matrix has the same size as the patch matrix.
@@ -56,7 +76,8 @@ def patch_probs_to_probs_matrix(batch_of_patch_probs, patch_matrix_size=(16, 9))
     probs_matrix = np.zeros((batch_size, patch_matrix_size[0]+1, patch_matrix_size[1]+1), dtype=np.float32)
 
     for i in range(batch_size):
-        p_matrix = np.reshape(batch_of_patch_probs[i], patch_matrix_size)
+        # Divide the patch probabilities by 4 to get the probability of each sub-patch
+        p_matrix = np.reshape(batch_of_patch_probs[i], patch_matrix_size) / 4
         # handle consequtive overlaping patches
         q_matrix = 1 - p_matrix
         q_matrix_overlapped = np.zeros((patch_matrix_size[0]+1, patch_matrix_size[1]+1), dtype=np.float32)
@@ -73,3 +94,13 @@ def patch_probs_to_probs_matrix(batch_of_patch_probs, patch_matrix_size=(16, 9))
         probs_matrix[i] = (probs_matrix[i] // 0.01) * 0.01
 
     return probs_matrix
+
+def visualize_mask(probs_matrix, mask_size_px=(60, 19)):
+    opacity_matrix = 1 - probs_matrix
+    opacity_matrix = np.clip(opacity_matrix, 0, 1)
+    opacity_matrix = (opacity_matrix * 255).astype(np.uint8)
+    opacity_matrix = cv2.cvtColor(opacity_matrix, cv2.COLOR_GRAY2BGR)
+    opacity_matrix = cv2.applyColorMap(opacity_matrix, cv2.COLORMAP_JET)
+    opacity_matrix = cv2.cvtColor(opacity_matrix, cv2.COLOR_BGR2RGB)
+    opacity_matrix = cv2.resize(opacity_matrix, mask_size_px)
+    return opacity_matrix
